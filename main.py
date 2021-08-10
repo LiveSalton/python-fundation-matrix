@@ -12,7 +12,6 @@ import urllib.request
 import pymysql
 import requests
 from bs4 import BeautifulSoup
-from requests import exceptions
 
 import Property
 from Property import SqlEntity
@@ -73,7 +72,7 @@ def update_fund_holding(fundCode):
         sqlStrCompile = sqlStr.format(fundHolding["fundCode"], fundHolding['stockCode'], fundHolding['stockName'],
                                       float(fundHolding['equity']), float(fundHolding['holdingNum']),
                                       float(fundHolding['holdingPrice']))
-        print(sqlStrCompile)
+        log("update_fund_holding", sqlStrCompile)
         cursor.execute(sqlStrCompile)
     database.commit()
     cursor.close()
@@ -85,32 +84,38 @@ def get_fund_holding(fund_code):
         "User-Agent": random.choice(Property.user_agent_list),
         "Referer": random.choice(Property.referer_list),
     }
+    url = "http://fundf10.eastmoney.com/FundArchivesDatas.aspx?type=jjcc&code=" + str(
+        fund_code) + "&topline=10&year=2021&month=6"
+    log("get_fund_holding", url)
     req = requests.get(
-        "http://fundf10.eastmoney.com/FundArchivesDatas.aspx?type=jjcc&code="
-        + str(fund_code) + "&topline=10&year=2021&month=6",
+        url,
         timeout=3,
         headers=header,
     )
+    fundHoldingList = []
+    req_content = req.text.replace('var apidata={ content:"', '')
     try:
-        text = req.text.replace('var apidata={ content:"', '')
         pattern = re.compile(r'",arryear:.*')
-        html = re.sub(pattern, '', text)
+        html = re.sub(pattern, '', req_content)
         soup = BeautifulSoup(html, 'lxml')
         trs = soup.table.tbody.find_all("tr")
-        fundHoldingList = []
         for tr in trs:
             td = tr.find_all("td")
             fundHolding = {'fundCode': fund_code, 'stockCode': td[1].string, 'stockName': td[2].string,
                            'equity': td[6].string.replace("%", "").replace(",", ""),
                            'holdingNum': td[7].string.replace(",", ""), 'holdingPrice': td[8].string.replace(",", "")}
             fundHoldingList.append(fundHolding)
-        print(fundHoldingList)
+        log("get_fund_holding", fundHoldingList)
         update_fund_state(fund_code)
+        return fundHoldingList
     except Exception as e:
-        print(e)
+        log("get_fund_holding", e)
+        log("get_fund_holding", req_content)
+        return fundHoldingList
 
-    return fundHoldingList
 
+def log(tag, msg):
+    print("{}|{}\n".format(tag, msg))
 
 # 获取基金数据
 def fetch_fund_data_from_queue():
@@ -125,38 +130,31 @@ def fetch_fund_data_from_queue():
         try:
             # 获取股票投资明细
             update_fund_holding(fund_code)
-
-        except (exceptions.ReadTimeout, exceptions.ConnectTimeout,
-                exceptions.ConnectionError):
-            # 访问失败了，所以要把我们刚才取出的数据再放回去队列中
-            fund_code_queue.put(fund_code)
-            print("访问失败，尝试使用其他代理访问")
-
         except Exception as e:
             # 其他错误, 可能是获取不到详细数据
-            # fund_code_queue.put(fund_code)
-            print(e)
+            fund_code_queue.put(fund_code)
+            log("fetch_fund_data_from_queue", e)
 
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
-    # 获取所有基金代码
-    fund_code_list = load_fund_info()
-    fund_len = len(fund_code_list)
-    print('基金总数为{}'.format(fund_len))
+    is_release = False
+    if is_release:
+        # 获取所有基金代码
+        fund_code_list = load_fund_info()
+        fund_len = len(fund_code_list)
+        log("main", '基金总数为{}'.format(fund_len))
+        # 创建一个队列
+        fund_code_queue = queue.Queue(fund_len)
+        # 写入基金代码数据到队列
+        for i in range(fund_len):
+            # fund_code_list[i]也是list类型，其中该list中的第0个元素存放基金代码
+            fund_code_queue.put(fund_code_list[i][0])
 
-    # 创建一个队列
-    fund_code_queue = queue.Queue(fund_len)
-    # 写入基金代码数据到队列
-    for i in range(fund_len):
-        # fund_code_list[i]也是list类型，其中该list中的第0个元素存放基金代码
-        fund_code_queue.put(fund_code_list[i][0])
-
-    # 在一定范围内，线程数越多，速度越快
-    for i in range(50):
-        t = threading.Thread(target=fetch_fund_data_from_queue, name="LoopThread" + str(i))
-        t.start()
-
-    # get_fund_holding("001510")
-    # update_fund_holding("001510")
-
+        # 在一定范围内，线程数越多，速度越快
+        for i in range(50):
+            t = threading.Thread(target=fetch_fund_data_from_queue, name="LoopThread" + str(i))
+            t.start()
+    else:
+        # get_fund_holding("001510")
+        update_fund_holding("001512")
