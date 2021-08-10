@@ -54,18 +54,18 @@ def update_fund_info():
     cursor.close()
 
 
-def update_fund_state(fundCode):
+def update_fund_state(fund_code):
     # 打开数据库连接
     cursor = database.cursor()
-    sqlStr = "UPDATE fund_info SET version = {} WHERE code = {}".format(Property.fund_version + 1, fundCode)
+    sqlStr = "UPDATE fund_info SET version = {} WHERE code = {}".format(Property.fund_version + 1, fund_code)
     cursor.execute(sqlStr)
     database.commit()
     cursor.close()
 
 
 # 更新持仓信息到数据库
-def update_fund_holding(fundCode):
-    holdings = get_fund_holding(fundCode)
+def update_fund_holding(fund_code):
+    holdings = get_fund_holding(fund_code)
     cursor = database.cursor()
     for fundHolding in holdings:
         sqlStr = "INSERT INTO fund_holding(fundCode,stockCode,stockName,equity,holdingNum,holdingPrice,version) VALUES('{}','{}','{}','{}','{}','{}','0')"
