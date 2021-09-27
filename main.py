@@ -35,7 +35,7 @@ def get_fund_info():
 # 加载数据库中的基金代码
 def load_fund_info():
     cursor = database.cursor()
-    cursor.execute("SELECT code FROM fund_info where version = {} ".format(Property.fund_version))
+    cursor.execute("SELECT code FROM fund_info where version = {}".format(Property.fund_version))
     fund_list = cursor.fetchall()
     cursor.close()
     return fund_list
@@ -66,16 +66,16 @@ def update_fund_state(fund_code):
 # 更新持仓信息到数据库
 def update_fund_holding(fund_code):
     holdings = get_fund_holding(fund_code)
-    cursor = database.cursor()
+    _cursor = database.cursor()
     for fundHolding in holdings:
         sqlStr = "INSERT INTO fund_holding(fundCode,stockCode,stockName,equity,holdingNum,holdingPrice,version) VALUES('{}','{}','{}','{}','{}','{}','0')"
         sqlStrCompile = sqlStr.format(fundHolding["fundCode"], fundHolding['stockCode'], fundHolding['stockName'],
                                       float(fundHolding['equity']), float(fundHolding['holdingNum']),
                                       float(fundHolding['holdingPrice']))
         log("update_fund_holding", sqlStrCompile)
-        cursor.execute(sqlStrCompile)
+        _cursor.execute(sqlStrCompile)
+    _cursor.close()
     database.commit()
-    cursor.close()
 
 
 # 请求持仓信息
@@ -101,21 +101,23 @@ def get_fund_holding(fund_code):
         trs = soup.table.tbody.find_all("tr")
         for tr in trs:
             td = tr.find_all("td")
-            fundHolding = {'fundCode': fund_code, 'stockCode': td[1].string, 'stockName': td[2].string,
+            fundHolding = {'fundCode': fund_code, 'stockCode': td[1].string, 'stockName': td[2].string.replace("'", ""),
                            'equity': td[6].string.replace("%", "").replace(",", ""),
                            'holdingNum': td[7].string.replace(",", ""), 'holdingPrice': td[8].string.replace(",", "")}
             fundHoldingList.append(fundHolding)
-        log("get_fund_holding", fundHoldingList)
+        # log("get_fund_holding", fundHoldingList)
         update_fund_state(fund_code)
         return fundHoldingList
     except Exception as e:
-        log("get_fund_holding", e)
+        update_fund_state(fund_code)
+        log("get_fund_holding exception:", e)
         log("get_fund_holding", req_content)
         return fundHoldingList
 
 
 def log(tag, msg):
     print("{}|{}\n".format(tag, msg))
+
 
 # 获取基金数据
 def fetch_fund_data_from_queue():
@@ -132,8 +134,8 @@ def fetch_fund_data_from_queue():
             update_fund_holding(fund_code)
         except Exception as e:
             # 其他错误, 可能是获取不到详细数据
-            fund_code_queue.put(fund_code)
-            log("fetch_fund_data_from_queue", e)
+            # fund_code_queue.put(fund_code)
+            log("fetch_fund_data_from_queue exception:", e)
 
 
 # Press the green button in the gutter to run the script.
@@ -156,5 +158,8 @@ if __name__ == '__main__':
             t = threading.Thread(target=fetch_fund_data_from_queue, name="LoopThread" + str(i))
             t.start()
     else:
-        # get_fund_holding("001510")
-        update_fund_holding("001512")
+        fund_code_list = load_fund_info()
+        fund_len = len(fund_code_list)
+        log("main", '基金总数为{}'.format(fund_len))
+        for i in range(fund_len):
+            update_fund_holding(fund_code_list[i][0])
